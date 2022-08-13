@@ -1,0 +1,1547 @@
+extensions [ csv gis rnd ]
+
+breed [ ats1 at1 ]
+breed [ ats2 at2 ]
+breed [ ats3 at3 ]
+breed [ ats4 at4 ]
+breed [ ats5 at5 ]
+breed [ ats6 at6 ]
+breed [ ats7 at7 ]
+breed [ ats8 at8 ]
+breed [ ats9 at9 ]
+breed [ ats10 at10 ]
+breed [ ats11 at11 ]
+
+globals [ data              ; data for base agents
+          attribute-distr   ; attribute distr for AT
+          lor-dataset       ; Shape file
+          data-new-agents   ; load new agents
+         ]
+
+ ; attributes of agents
+turtles-own [ lor                   ; number of the LOR, where the agent lives
+              Mar_Stat              ; marital status
+              MGBG                  ; migration background
+              gender                ; gender <- is needed for the calculation of the mortality rate
+              age                   ; age <- needed for the calculation of the mortality rate and the adapted moving probability
+              base-move
+              fake-breed
+              status                ; for differentiating between old and newly created agents = needed for linking and not resetting agents in space during every time step
+              num-friends
+              real-friends          ; the current number of links
+            ]
+
+patches-own [ lor-Number ] ; attributes of space
+
+; -------------------- Setup the model --------------------------
+; Button
+; Clear everything
+; Close everything
+to setup
+ ca
+ file-close-all
+ reset-ticks
+ load-map
+ load-agents
+
+ get-network
+ file-close-all
+ ; print timer
+end
+
+to go
+  ask turtles [
+    set status "old"
+    set age age + 1
+    if new-agents? [
+      calc-prob-die
+      if age > 102 [ die ]
+    ]
+    set real-friends count link-neighbors
+    calc-move
+  ]
+
+  if new-agents? [ load-newAgents ]
+  get-network-go  ;; muss hier rein, weil sonst keine neuen Agenten mehr verknüpft werden, wenn keine young agents gebildet werden
+
+  ;if ticks >= 16 [
+ if ticks = 15 [
+    export-file
+    ;stop
+  ]
+
+  ; print count turtles
+  tick
+end
+
+to export-file
+  let file-neigh word "nrAgents_" nr-agents-neighborhood
+  let file_rad word "_radius_" radius-neighborhood
+  let file_tick word "_tick_" ticks
+  let file_comb word file-neigh file_rad
+  let file_name_0 word file_comb file_tick
+  let file_nw word "_weight_nw" nw_weight
+  let file_age word "_weight_age" age_weight
+  let file_weight word file_nw file_age
+  let file_name word file_name_0 file_weight
+  ifelse new-agents?
+  [ set file_name word file_name "_new_true"]
+  [ set file_name word file_name "_new_false"]
+  export-world word file_name ".csv"
+end
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;----------------------------------------------------------------------------------------------------------------------
+;;------------------------------------No buttons---------------------------------------------------------------------------------------------------------
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;----------------------------------------------------------------------------------------------------------------------
+
+;---------------------------------Load all agents--------------------------------------
+;----------------Load Agents-------------------------------------
+to load-agents
+  load-AT-LOR-data
+  load-attr-data
+
+  ask turtles [
+   get-breed
+   move-to one-of patches with [ lor-Number = [ lor ] of myself ]
+  ]
+
+  get-ats-attributes
+  set-age
+
+
+  file-close-all
+end
+
+;Load initialisation agents -----------------------------------------------------------
+to load-AT-LOR-data
+;;important: header must be deleted if it exist!! <-<-<-<-< check order of ATs!!!!!!
+  ; catch possible non-existing/wrong written file
+  if not file-exists? "sum_AT_20Per.csv" [
+    user-message "No file 'sum_AT_20Per' exists!"
+    stop
+  ]
+
+  ; opens file
+  file-open "sum_AT_20Per.csv" ; open the file with the turtle data
+
+    ; ; We'll read all the data in a single loop  ;;; <<<<<<---- wahrscheinlich muss die ganze Datei in einem gelesen werden...
+   while [ not file-at-end? ] [ ;;; rows <<<<<<<-----  ;    ; here the CSV extension grabs a single line and puts the read data in a list
+    set data csv:from-row file-read-line
+
+    let i 1
+      ;    ; now we can use that list to create a turtle with the saved properties
+    while [ i < 12 ] [
+
+      let number-turtles item i data ;; adress the cells and create turtles accordingly -> some rows are read more often
+      create-turtles number-turtles [ ; for every row, a the amount of number-turtles as turtles is created
+       set lor item 0 data
+       set fake-breed word "ats" i
+      ]
+
+    set i i + 1
+    ]
+  ]
+  file-close ; make sure to close the file
+end
+
+;Load data of the attribute distribution----------------------------------------------
+to load-attr-data
+  if not file-exists? "AttrDistrAt.csv" [
+    user-message "CSV file does not exist"
+    stop
+  ]
+  file-open "AttrDistrAt.csv" ; open the file with the turtle data
+  set attribute-distr csv:from-file "AttrDistrAt.csv" ; input file can be shortened
+;  show data
+end
+
+;----------------------------------------Get the different attributes of the agents---------------------------
+;-------------------------------------------------------------------------------------------------------------
+
+; get breed of AT and set the color-------------------------------------------------------------------------
+to get-breed
+  if fake-breed = "ats1"
+    [
+      set breed ats1
+      set color 18
+    ]
+  if fake-breed = "ats2"
+    [
+      set breed ats2
+      set color red
+    ]
+  if fake-breed = "ats3"
+    [
+      set breed ats3
+      set color orange
+    ]
+  if fake-breed = "ats4"
+    [
+      set breed ats4
+      set color 35
+    ]
+  if fake-breed = "ats5"
+    [
+      set breed ats5
+      set color yellow
+    ]
+  if fake-breed = "ats6"
+    [
+      set breed ats6
+      set color 54
+    ]
+  if fake-breed = "ats7"
+    [
+      set breed ats7
+      set color lime
+     ]
+  if fake-breed = "ats8"
+    [
+      set breed ats8
+      set color 85
+    ]
+  if fake-breed = "ats9"
+    [
+      set breed ats9
+      set color blue
+     ]
+  if fake-breed = "ats10"
+    [
+      set breed ats10
+      set color 124
+    ]
+ if fake-breed = "ats11"
+    [
+      set breed ats11
+      set color 138
+    ]
+end
+
+; call the other attribute procedures -------------------------------------------
+; get attributes for the initialization
+to get-ats-attributes
+ ask ats1 [
+    let j 1
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats2 [
+    let j 2
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats3 [
+    let j 3
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats4 [
+    let j 4
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats5 [
+    let j 5
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats6 [
+    let j 6
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats7 [
+    let j 7
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats8 [
+    let j 8
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats9 [
+    let j 9
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats10 [
+    let j 10
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats11 [
+    let j 11
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+    set num-friends item 24 (item j attribute-distr)
+  ]
+end
+
+
+;--------- setup the network -------------------------------
+;-----------------------------------------------------------------------------
+
+; create links for the old turtles
+to get-radius-friends-ini [ #radius #breed ]
+   let linkers turtles with [breed = #breed]
+   ask linkers
+    [ let new-links num-friends - count my-links
+      if new-links > 0
+      [ let candidates other linkers with [ count my-links < num-friends ] in-radius #radius
+        let chosen up-to-n-of new-links candidates
+        create-links-with chosen [ hide-link ]
+      ]
+    ]
+end
+
+to get-network
+  get-radius-friends-ini radius-friends ats1  ;; radius-friends is included with the slider
+  get-radius-friends-ini radius-friends ats2
+  get-radius-friends-ini radius-friends ats3
+  get-radius-friends-ini radius-friends ats4
+  get-radius-friends-ini radius-friends ats5
+  get-radius-friends-ini radius-friends ats6
+  get-radius-friends-ini radius-friends ats7
+  get-radius-friends-ini radius-friends ats8
+  get-radius-friends-ini radius-friends ats9
+  get-radius-friends-ini radius-friends ats10
+  get-radius-friends-ini radius-friends ats11
+
+  ask turtles [
+   set real-friends count link-neighbors
+  ]
+end
+
+
+;; connects new and old agents at random with max links for the go button
+to get-radius-friends-go [ #radius #breed ]
+    ;; connects only new turtles
+  let linkers-new turtles with [ breed = #breed AND real-friends < num-friends AND status = "young"]
+  ask linkers-new ; individual is adressed here?
+  [ let new-links num-friends - count my-links
+    if new-links > 0
+      [ let candidates other linkers-new with [ count my-links < num-friends ] in-radius #radius
+        let chosen up-to-n-of new-links candidates
+        create-links-with chosen [ hide-link ]
+    ]
+  ]
+
+  ;; connects only old turtles and young turtles who are not yet connected
+  let linkers-old turtles with [ breed = #breed  AND real-friends < num-friends] ; count my-links to avoid addressing ALL turtles
+  ask linkers-old
+  [if random-float 1 < 0.4 [; establishes if already existing agents get a new friends (40% chance) AND there still has to be a free other agent
+      if (status = "old")
+      [let candidates other linkers-old with [ real-friends < num-friends] in-radius #radius ;;; and status young sollte raus --> funktioniert sonst nicht, wenn keine jungen Agenten gfebildet werden
+        let chosen up-to-n-of 1 candidates  ;; the agents can get max one new links
+        create-links-with chosen [ hide-link ]
+      ]
+    ]
+  ]
+end
+
+to get-network-go
+  get-radius-friends-go radius-friends ats1  ;; radius-friends is included with the slider
+  get-radius-friends-go radius-friends ats2
+  get-radius-friends-go radius-friends ats3
+  get-radius-friends-go radius-friends ats4
+  get-radius-friends-go radius-friends ats5
+  get-radius-friends-go radius-friends ats6
+  get-radius-friends-go radius-friends ats7
+  get-radius-friends-go radius-friends ats8
+  get-radius-friends-go radius-friends ats9
+  get-radius-friends-go radius-friends ats10
+  get-radius-friends-go radius-friends ats11
+end
+
+; ---------- calulate probability of dying ---------------
+; ----------------------------------------------------------------------------------------------------
+
+;; Ob ein Agent stirbt oder nicht wird hier ausgegeben. Rückgabewert ist true/false
+to calc-prob-die
+  if (gender = "male") [
+    let die-val mortality-male age          ; hier wird die Sterbewahrscheinlichkeit eingegeben
+    if (die-val >= random-float 1)[
+       die
+    ]
+  ]
+  if (gender = "female") [
+    let die-val mortality-female age        ; hier wird die Sterbewahrscheinlichkeit eingegeben
+    if (die-val >= random-float 1)[
+       die
+    ]
+  ]
+end
+
+;; Hier sind die Sterbewahrscheinlichkeiten der Männer in einem bestimmten Alter
+to-report mortality-male [num-age]
+  let num-male -99
+  let list-male [0.0282 0.0426 0.078 0.1496 0.2411 0.4032 0.6254]
+
+  if (num-age >= 65 and num-age < 70) [
+    set num-male item 0 list-male
+  ]
+  if (70 <= num-age and num-age < 75) [
+   set num-male item 1 list-male
+  ]
+  if (75 <= num-age and num-age < 80) [
+   set num-male item 2 list-male
+  ]
+  if (80 <= num-age and num-age < 85) [
+   set num-male item 3 list-male
+  ]
+  if (85 <= num-age and num-age < 90) [
+   set num-male item 4 list-male
+  ]
+  if (90 <= num-age and num-age < 95) [
+   set num-male item 5 list-male
+  ]
+  if (num-age >= 95) [
+   set num-male item 6 list-male
+  ]
+  report num-male
+end
+
+;; Hier sind die Sterbewahrscheinlichkeiten der Frauen in einem bestimmten Alter
+to-report mortality-female [num-age]
+  let num-fem -99
+  let list-fem [0.0158 0.0234 0.0523 0.1081 0.21 0.3561 0.5981] ; aus Kopie 12621-0001
+
+  if (num-age >= 65 and num-age < 70) [
+    set num-fem item 0 list-fem
+  ]
+  if (70 <= num-age and num-age < 75) [
+   set num-fem item 1 list-fem
+  ]
+  if (75 <= num-age and num-age < 80) [
+   set num-fem item 2 list-fem
+  ]
+  if (80 <= num-age and num-age < 85) [
+   set num-fem item 3 list-fem
+  ]
+  if (85 <= num-age and num-age < 90) [
+   set num-fem item 4 list-fem
+  ]
+  if (90 <= num-age and num-age < 95) [
+   set num-fem item 5 list-fem
+  ]
+  if (num-age >= 95) [
+   set num-fem item 6 list-fem
+  ]
+  report num-fem
+end
+
+;; Get the new position of the agents. First the agents check if their preferred location is available. Otherwise they just move to a random location
+
+to new-position; es muss ja hier eigentlich noch die random möglichkeit geben, falls nichts zutrifft
+  ; Counts how many agents with the same AT live on the same patch Grunewald und Tiergarten nicht mehr explizit ausgeschlossen, da hier ja niemand lebt
+  ; nr-agents-neighborhood gives as global variable by the slider
+  ; count turtles-on neighbors <- count turtles in neghborhood with the same breed
+
+  let targets1 patches in-radius radius-neighborhood  with [count ats1-here >= nr-agents-neighborhood ]  ; there is the possibility that elderly are out of the border of Berlin (not entirely unlikely)
+  let targets2 patches in-radius radius-neighborhood  with [count ats2-here >= nr-agents-neighborhood ]
+  let targets3 patches in-radius radius-neighborhood  with [count ats3-here >= nr-agents-neighborhood ]
+  let targets4 patches in-radius radius-neighborhood  with [count ats4-here >= nr-agents-neighborhood ]
+  let targets5 patches in-radius radius-neighborhood  with [count ats5-here >= nr-agents-neighborhood ]
+  let targets6 patches in-radius radius-neighborhood  with [count ats6-here >= nr-agents-neighborhood ]
+  let targets7 patches in-radius radius-neighborhood  with [count ats7-here >= nr-agents-neighborhood ]
+  let targets8 patches in-radius radius-neighborhood  with [count ats8-here >= nr-agents-neighborhood ]
+  let targets9 patches in-radius radius-neighborhood  with [count ats9-here >= nr-agents-neighborhood ]
+  let targets10 patches in-radius radius-neighborhood  with [count ats10-here >= nr-agents-neighborhood ]
+  let targets11 patches in-radius radius-neighborhood  with [count ats11-here >= nr-agents-neighborhood ]
+
+  if (breed = ats1 ) [
+   ifelse any? targets1
+    [ move-to one-of targets1 ]
+    ;; evtl statt lor number, count turtles > 20?
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]]; [ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+  if (breed = ats2 ) [
+   ifelse any? targets2
+    [ move-to one-of targets2 ]
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]];[ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+  if (breed = ats3 ) [
+   ifelse any? targets3
+    [ move-to one-of targets3 ]
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]]; [ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+  if (breed = ats4 ) [
+   ifelse any? targets4
+    [ move-to one-of targets4 ]
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]]; [ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+  if (breed = ats5 ) [
+   ifelse any? targets5
+    [ move-to one-of targets5 ]
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]]; [ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+  if (breed = ats6 ) [
+   ifelse any? targets6
+    [ move-to one-of targets6 ]
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]];[ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+  if (breed = ats7 ) [
+   ifelse any? targets7
+    [ move-to one-of targets7 ]
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]];[ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+  if (breed = ats8 ) [
+   ifelse any? targets8
+    [ move-to one-of targets8 ]
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]]; [ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+  if (breed = ats9 ) [
+   ifelse any? targets9
+    [ move-to one-of targets9 ]
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]]; [ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+  if (breed = ats10 ) [
+   ifelse any? targets10
+    [ move-to one-of targets10 ]
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]]; [ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+  if (breed = ats11 ) [
+   ifelse any? targets11
+    [ move-to one-of targets11 ]
+    [ move-to one-of patches with [count turtles-here >= nr-agents-neighborhood ]];[ lor-Number != 0 and lor-Number != 4020314 and lor-Number != 4041133 and lor-Number != 4061757 and lor-Number != 9010102 and lor-Number != 4020204]]
+  ]
+
+  set lor [ lor-Number ] of patch-here              ;; adopt patch attribute as own attribute
+end
+
+
+
+
+to calc-move
+  let weight-friends 0.75
+  if (real-friends < 1)[set weight-friends nw_weight] ;; slider
+
+
+  let weight-age 1
+  if age < 71 [set weight-age 0.5 + age_weight]
+  if age > 79 [set weight-age 1.5 - age_weight] ;;
+
+  let move-prob base-move * weight-friends * weight-age
+  if ( move-prob >= random-float 1 )[
+    set base-move 0.0005                                     ; therefore the base-moving probability is reset
+    new-position
+    ask my-links [die]
+  ]
+
+end
+
+
+
+
+;-----------------------------------Get Map-----------------------------
+to load-map
+  resize-world 0 250 0 210
+  set-patch-size 2.5
+
+  set lor-dataset gis:load-dataset "LOR_SHP_EPSG_25833/Lor_data.shp"
+  gis:set-world-envelope (gis:envelope-of lor-dataset)
+
+  ask patches [
+    set pcolor black
+  ]
+  ask patches gis:intersecting lor-dataset
+  [ set pcolor gray
+  ]
+
+  gis:set-drawing-color white
+  gis:draw lor-dataset 1
+
+  get-lorNR
+end
+
+; Get LOR-NR of patches-----------------------------
+to get-lorNR
+ gis:apply-coverage lor-dataset "SCHLUESSEL" lor-Number ; Alle Attributspalten löschen, die man nicht braucht
+
+  ; gives patches the information of the LOR
+  ; LOR info from shapefile is loaded as string
+ ask patches [
+  ifelse ( is-number? lor-Number)
+    [ set lor-Number 0 ]
+    [ set lor-Number read-from-string lor-Number ]
+ ]
+end
+
+;--------------------------------Load the different data files --------------------------------------------
+
+;Load new agents -----------------------------------------------------------
+to load-newAT-data
+;;important: header must be deleted if it exist!! <-<-<-<-< check order of ATs!!!!!!
+  ; catch possible non-existing/wrong written file
+  if not file-exists? "sum_AT_newAT_20Per.csv" [
+    user-message "No file 'sum_AT_newAT_20Per' exists!"
+    stop
+  ]
+
+  ; opens file
+  file-open "sum_AT_newAT_20Per.csv" ; open the file with the turtle data
+
+    ; ; We'll read all the data in a single loop  ;;; <<<<<<---- wahrscheinlich muss die ganze Datei in einem gelesen werden...
+   while [ not file-at-end? ] [ ;;; rows <<<<<<<-----  ;    ; here the CSV extension grabs a single line and puts the read data in a list
+    set data-new-agents csv:from-row file-read-line
+
+    let i 1
+      ;    ; now we can use that list to create a turtle with the saved properties
+    while [ i < 12 ] [
+
+      let number-turtles item i data-new-agents ;; adress the cells and create turtles accordingly -> some rows are read more often
+      create-turtles number-turtles [ ; for every row, a the amount of number-turtles as turtles is created
+       set lor item 0 data-new-agents
+       set fake-breed word "ats" i
+       set status "young"
+      ]
+
+    set i i + 1
+    ]
+  ]
+  file-close ; make sure to close the file
+end
+
+
+
+;Load new Agents-------------------------------------
+to load-newAgents
+  load-newAT-data
+
+  ask turtles with [status = "young"] [
+   get-breed
+   set age 65
+   move-to one-of patches with [ lor-Number = [ lor ] of myself ]
+  ]
+
+  get-Newats-attributes
+  file-close-all
+end
+
+
+
+
+; get attributes for the new agents
+to get-Newats-attributes
+  ask ats1 with [status = "young"] [
+    let j 1
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats2 with [status = "young"] [
+    let j 2
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats3 with [status = "young"] [
+    let j 3
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats4 with [status = "young"] [
+    let j 4
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats5 with [status = "young"] [
+    let j 5
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats6 with [status = "young"] [
+    let j 6
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats7 with [status = "young"] [
+    let j 7
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats8 with [status = "young"] [
+    let j 8
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats9 with [status = "young"] [
+    let j 9
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats10 with [status = "young"] [
+    let j 10
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+   ask ats11 with [status = "young"] [
+    let j 11
+    get-sex j
+    get-MGBG j
+    get-Mar_Stat j
+    set base-move item 23 (item j attribute-distr)
+   set num-friends item 24 (item j attribute-distr)
+  ]
+end
+
+; Get gender-----------------------------------------------------------------
+to get-sex [ i ]
+  let gender-prob item 12 ( item i attribute-distr )
+  ifelse (random-float 1 < gender-prob)
+    [ set gender "female" ]
+    [ set gender "male"]
+end
+
+; get Migration background
+to get-MGBG [ i ]
+  let german item 20 ( item i attribute-distr )
+
+  ifelse(random-float 1 < german)
+   [set MGBG "G"]
+   [set MGBG "F"]
+end
+
+; get the marital status
+to get-Mar_Stat [ i ]
+  let random-var random-float 1
+  let div-val item 13 ( item i attribute-distr )
+  let wid-val item 19 ( item i attribute-distr )
+  let sing-val item 17 ( item i attribute-distr )
+
+  if ( random-var <= div-val )
+    [ set Mar_Stat "div" ]
+  if ( random-var > div-val and random-var <= wid-val + div-val )
+    [ set Mar_Stat "wid" ]
+  if ( random-var > wid-val + div-val and random-var <= wid-val + div-val + sing-val )
+    [set Mar_Stat "sing" ]
+  if ( random-var > wid-val + div-val + sing-val )
+    [ set Mar_Stat "mar" ]
+end
+
+; get the age of the agents with a weighted draw
+to set-age
+  let age_written (list item 1 (item 0 attribute-distr) item 2 (item 0 attribute-distr) item 3 (item 0 attribute-distr) item 4 (item 0 attribute-distr) item 5 (item 0 attribute-distr) item 6 (item 0 attribute-distr))
+  let prob1 (list item 1 (item 1 attribute-distr) item 2 (item 1 attribute-distr) item 3 (item 1 attribute-distr) item 4 (item 1 attribute-distr) item 5 (item 1 attribute-distr) item 6 (item 1 attribute-distr) )
+  let prob2 (list item 1 (item 2 attribute-distr) item 2 (item 2 attribute-distr) item 3 (item 2 attribute-distr) item 4 (item 2 attribute-distr) item 5 (item 2 attribute-distr) item 6 (item 2 attribute-distr) )
+  let prob3 (list item 1 (item 3 attribute-distr) item 2 (item 3 attribute-distr) item 3 (item 3 attribute-distr) item 4 (item 3 attribute-distr) item 5 (item 3 attribute-distr) item 6 (item 3 attribute-distr) )
+  let prob4 (list item 1 (item 4 attribute-distr) item 2 (item 4 attribute-distr) item 3 (item 4 attribute-distr) item 4 (item 4 attribute-distr) item 5 (item 4 attribute-distr) item 6 (item 4 attribute-distr) )
+  let prob5 (list item 1 (item 5 attribute-distr) item 2 (item 5 attribute-distr) item 3 (item 5 attribute-distr) item 4 (item 5 attribute-distr) item 5 (item 5 attribute-distr) item 6 (item 5 attribute-distr) )
+  let prob6 (list item 1 (item 6 attribute-distr) item 2 (item 6 attribute-distr) item 3 (item 6 attribute-distr) item 4 (item 6 attribute-distr) item 5 (item 6 attribute-distr) item 6 (item 6 attribute-distr) )
+  let prob7 (list item 1 (item 7 attribute-distr) item 2 (item 7 attribute-distr) item 3 (item 7 attribute-distr) item 4 (item 7 attribute-distr) item 5 (item 7 attribute-distr) item 6 (item 7 attribute-distr) )
+  let prob8 (list item 1 (item 8 attribute-distr) item 2 (item 8 attribute-distr) item 3 (item 8 attribute-distr) item 4 (item 8 attribute-distr) item 5 (item 8 attribute-distr) item 6 (item 8 attribute-distr) )
+  let prob9 (list item 1 (item 9 attribute-distr) item 2 (item 9 attribute-distr) item 3 (item 9 attribute-distr) item 4 (item 9 attribute-distr) item 5 (item 9 attribute-distr) item 6 (item 9 attribute-distr) )
+  let prob10 (list item 1 (item 10 attribute-distr) item 2 (item 10 attribute-distr) item 3 (item 10 attribute-distr) item 4 (item 10 attribute-distr) item 5 (item 10 attribute-distr) item 6 (item 10 attribute-distr) )
+
+  let pairs_AT1_age (map list age_written prob1)
+  let pairs_AT2 (map list age_written prob2)
+  let pairs_AT3 (map list age_written prob3)
+  let pairs_AT4 (map list age_written prob4)
+  let pairs_AT5 (map list age_written prob5)
+  let pairs_AT6 (map list age_written prob6)
+  let pairs_AT7 (map list age_written prob7)
+  let pairs_AT8 (map list age_written prob8)
+  let pairs_AT9 (map list age_written prob9)
+  let pairs_AT10 (map list age_written prob10)
+
+  ask ats1 [ ;create first agent-typology with a weighted random draw
+   set age first rnd:weighted-one-of-list pairs_AT1_age [ [p] -> last p ]
+  ]
+
+  ask ats2 [
+   set age first rnd:weighted-one-of-list pairs_AT2 [ [p] -> last p ]
+  ]
+
+  ask ats3 [
+   set age first rnd:weighted-one-of-list pairs_AT3 [ [p] -> last p ]
+  ]
+
+  ask ats4 [
+   set age first rnd:weighted-one-of-list pairs_AT4 [ [p] -> last p ]
+  ]
+
+  ask ats5 [
+   set age first rnd:weighted-one-of-list pairs_AT5 [ [p] -> last p ]
+  ]
+
+  ask ats6 [
+   set age first rnd:weighted-one-of-list pairs_AT6 [ [p] -> last p ]
+  ]
+
+  ask ats7 [
+   set age first rnd:weighted-one-of-list pairs_AT7 [ [p] -> last p ]
+  ]
+
+  ask ats8 [
+   set age first rnd:weighted-one-of-list pairs_AT8 [ [p] -> last p ]
+  ]
+
+  ask ats9 [
+   set age first rnd:weighted-one-of-list pairs_AT9 [ [p] -> last p ]
+  ]
+
+  ask ats10 [
+   set age first rnd:weighted-one-of-list pairs_AT10 [ [p] -> last p ]
+  ]
+
+  ask ats11 [
+   set age first rnd:weighted-one-of-list pairs_AT10 [ [p] -> last p ]
+  ]
+
+  single-age
+end
+
+to single-age
+  ask turtles [
+    if age = 90 [set age 90 + random 7]
+    if age = 8589 [set age 85 + random 5]
+    if age = 8084 [set age 80 + random 5]
+    if age = 7579 [set age 75 + random 5]
+    if age = 7074 [set age 70 + random 5]
+    if age = 6569 [set age 65 + random 5]  ; the younger 65 year old will immediately become elder
+  ]
+end
+@#$#@#$#@
+GRAPHICS-WINDOW
+178
+29
+813
+565
+-1
+-1
+2.5
+1
+10
+1
+1
+1
+0
+0
+0
+1
+0
+250
+0
+210
+1
+1
+1
+ticks
+30.0
+
+BUTTON
+15
+320
+78
+353
+NIL
+setup
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+TEXTBOX
+65
+833
+469
+944
+- check the move-to\n- validation distr of elderly\n- check how fast the population of the elderly increases in reality\n- discuss the increasing age\n\n
+11
+0.0
+1
+
+BUTTON
+15
+370
+78
+403
+NIL
+go
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+PLOT
+829
+33
+1219
+311
+Movement Agents
+NIL
+NIL
+1.0
+15.0
+0.0
+150000.0
+false
+true
+"" ""
+PENS
+"Not moved" 1.0 0 -16777216 true "" "plot count turtles with [base-move > 0.0009]"
+"Moved" 1.0 0 -7500403 true "" "plot count turtles with [base-move < 0.0009]"
+
+SWITCH
+15
+240
+135
+273
+new-agents?
+new-agents?
+0
+1
+-1000
+
+SLIDER
+10
+30
+150
+63
+nr-agents-neighborhood
+nr-agents-neighborhood
+0
+60
+20.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+10
+75
+150
+108
+radius-neighborhood
+radius-neighborhood
+0
+20
+20.0
+1
+1
+NIL
+HORIZONTAL
+
+TEXTBOX
+745
+814
+895
+842
+U90 muss aus dem attr_distr gelöscht werde = 90
+11
+0.0
+1
+
+PLOT
+829
+445
+1215
+565
+Number agents
+NIL
+NIL
+1.0
+15.0
+100000.0
+200000.0
+false
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot count turtles"
+
+SLIDER
+1010
+845
+1150
+878
+radius-friends
+radius-friends
+0
+30
+22.0
+1
+1
+NIL
+HORIZONTAL
+
+PLOT
+829
+317
+1216
+437
+Number of links
+NIL
+NIL
+1.0
+15.0
+0.0
+500000.0
+false
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot count links"
+
+TEXTBOX
+15
+15
+165
+33
+Moving-to constraints:
+11
+0.0
+1
+
+TEXTBOX
+1015
+825
+1165
+843
+Network selection:
+11
+0.0
+1
+
+BUTTON
+1015
+890
+1102
+923
+NIL
+export-file
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SLIDER
+10
+200
+150
+233
+age_weight
+age_weight
+0
+0.75
+0.75
+0.25
+1
+NIL
+HORIZONTAL
+
+SLIDER
+10
+155
+150
+188
+nw_weight
+nw_weight
+0.25
+1.75
+1.5
+0.25
+1
+NIL
+HORIZONTAL
+
+TEXTBOX
+10
+125
+160
+143
+Weights
+11
+0.0
+1
+
+@#$#@#$#@
+## What's new?
+Zu 22.06. Einfügen der Umzugswahrscheinlichkeit
+
+Anzahl der neuen Agenten wurde reduziert und an die verschwundenen Agenten bei der Initialisierung angepasst (32%)
+
+## WHAT IS IT?
+
+(a general understanding of what the model is trying to show or explain)
+
+## HOW IT WORKS
+
+(what rules the agents use to create the overall behavior of the model)
+
+## HOW TO USE IT
+
+(how to use the model, including a description of each of the items in the Interface tab)
+
+## THINGS TO NOTICE
+
+(suggested things for the user to notice while running the model)
+
+## THINGS TO TRY
+
+Slider einbauen für unterschiedliche Submodelle
+Outputfile im Vergleich (Graph)
+Eigenschaften an die Turtles ranhängen
+
+Statistik Heterogenität Nachbarschaft/Bezirke
+Clusteranalyse aus dem neuem Datensatz?
+Räumlich Explizites Modell am Ende (mit Häusern etc)
+
+Output Typen? Welche sollen gewählt werden?
+
+## EXTENDING THE MODEL
+
+(suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
+
+## NETLOGO FEATURES
+
+(interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
+
+## RELATED MODELS
+
+(models in the NetLogo Models Library and elsewhere which are of related interest)
+
+## CREDITS AND REFERENCES
+
+(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
+@#$#@#$#@
+default
+true
+0
+Polygon -7500403 true true 150 5 40 250 150 205 260 250
+
+airplane
+true
+0
+Polygon -7500403 true true 150 0 135 15 120 60 120 105 15 165 15 195 120 180 135 240 105 270 120 285 150 270 180 285 210 270 165 240 180 180 285 195 285 165 180 105 180 60 165 15
+
+arrow
+true
+0
+Polygon -7500403 true true 150 0 0 150 105 150 105 293 195 293 195 150 300 150
+
+box
+false
+0
+Polygon -7500403 true true 150 285 285 225 285 75 150 135
+Polygon -7500403 true true 150 135 15 75 150 15 285 75
+Polygon -7500403 true true 15 75 15 225 150 285 150 135
+Line -16777216 false 150 285 150 135
+Line -16777216 false 150 135 15 75
+Line -16777216 false 150 135 285 75
+
+bug
+true
+0
+Circle -7500403 true true 96 182 108
+Circle -7500403 true true 110 127 80
+Circle -7500403 true true 110 75 80
+Line -7500403 true 150 100 80 30
+Line -7500403 true 150 100 220 30
+
+butterfly
+true
+0
+Polygon -7500403 true true 150 165 209 199 225 225 225 255 195 270 165 255 150 240
+Polygon -7500403 true true 150 165 89 198 75 225 75 255 105 270 135 255 150 240
+Polygon -7500403 true true 139 148 100 105 55 90 25 90 10 105 10 135 25 180 40 195 85 194 139 163
+Polygon -7500403 true true 162 150 200 105 245 90 275 90 290 105 290 135 275 180 260 195 215 195 162 165
+Polygon -16777216 true false 150 255 135 225 120 150 135 120 150 105 165 120 180 150 165 225
+Circle -16777216 true false 135 90 30
+Line -16777216 false 150 105 195 60
+Line -16777216 false 150 105 105 60
+
+car
+false
+0
+Polygon -7500403 true true 300 180 279 164 261 144 240 135 226 132 213 106 203 84 185 63 159 50 135 50 75 60 0 150 0 165 0 225 300 225 300 180
+Circle -16777216 true false 180 180 90
+Circle -16777216 true false 30 180 90
+Polygon -16777216 true false 162 80 132 78 134 135 209 135 194 105 189 96 180 89
+Circle -7500403 true true 47 195 58
+Circle -7500403 true true 195 195 58
+
+circle
+false
+0
+Circle -7500403 true true 0 0 300
+
+circle 2
+false
+0
+Circle -7500403 true true 0 0 300
+Circle -16777216 true false 30 30 240
+
+cow
+false
+0
+Polygon -7500403 true true 200 193 197 249 179 249 177 196 166 187 140 189 93 191 78 179 72 211 49 209 48 181 37 149 25 120 25 89 45 72 103 84 179 75 198 76 252 64 272 81 293 103 285 121 255 121 242 118 224 167
+Polygon -7500403 true true 73 210 86 251 62 249 48 208
+Polygon -7500403 true true 25 114 16 195 9 204 23 213 25 200 39 123
+
+cylinder
+false
+0
+Circle -7500403 true true 0 0 300
+
+dot
+false
+0
+Circle -7500403 true true 90 90 120
+
+face happy
+false
+0
+Circle -7500403 true true 8 8 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Polygon -16777216 true false 150 255 90 239 62 213 47 191 67 179 90 203 109 218 150 225 192 218 210 203 227 181 251 194 236 217 212 240
+
+face neutral
+false
+0
+Circle -7500403 true true 8 7 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Rectangle -16777216 true false 60 195 240 225
+
+face sad
+false
+0
+Circle -7500403 true true 8 8 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Polygon -16777216 true false 150 168 90 184 62 210 47 232 67 244 90 220 109 205 150 198 192 205 210 220 227 242 251 229 236 206 212 183
+
+fish
+false
+0
+Polygon -1 true false 44 131 21 87 15 86 0 120 15 150 0 180 13 214 20 212 45 166
+Polygon -1 true false 135 195 119 235 95 218 76 210 46 204 60 165
+Polygon -1 true false 75 45 83 77 71 103 86 114 166 78 135 60
+Polygon -7500403 true true 30 136 151 77 226 81 280 119 292 146 292 160 287 170 270 195 195 210 151 212 30 166
+Circle -16777216 true false 215 106 30
+
+flag
+false
+0
+Rectangle -7500403 true true 60 15 75 300
+Polygon -7500403 true true 90 150 270 90 90 30
+Line -7500403 true 75 135 90 135
+Line -7500403 true 75 45 90 45
+
+flower
+false
+0
+Polygon -10899396 true false 135 120 165 165 180 210 180 240 150 300 165 300 195 240 195 195 165 135
+Circle -7500403 true true 85 132 38
+Circle -7500403 true true 130 147 38
+Circle -7500403 true true 192 85 38
+Circle -7500403 true true 85 40 38
+Circle -7500403 true true 177 40 38
+Circle -7500403 true true 177 132 38
+Circle -7500403 true true 70 85 38
+Circle -7500403 true true 130 25 38
+Circle -7500403 true true 96 51 108
+Circle -16777216 true false 113 68 74
+Polygon -10899396 true false 189 233 219 188 249 173 279 188 234 218
+Polygon -10899396 true false 180 255 150 210 105 210 75 240 135 240
+
+house
+false
+0
+Rectangle -7500403 true true 45 120 255 285
+Rectangle -16777216 true false 120 210 180 285
+Polygon -7500403 true true 15 120 150 15 285 120
+Line -16777216 false 30 120 270 120
+
+leaf
+false
+0
+Polygon -7500403 true true 150 210 135 195 120 210 60 210 30 195 60 180 60 165 15 135 30 120 15 105 40 104 45 90 60 90 90 105 105 120 120 120 105 60 120 60 135 30 150 15 165 30 180 60 195 60 180 120 195 120 210 105 240 90 255 90 263 104 285 105 270 120 285 135 240 165 240 180 270 195 240 210 180 210 165 195
+Polygon -7500403 true true 135 195 135 240 120 255 105 255 105 285 135 285 165 240 165 195
+
+line
+true
+0
+Line -7500403 true 150 0 150 300
+
+line half
+true
+0
+Line -7500403 true 150 0 150 150
+
+pentagon
+false
+0
+Polygon -7500403 true true 150 15 15 120 60 285 240 285 285 120
+
+person
+false
+0
+Circle -7500403 true true 110 5 80
+Polygon -7500403 true true 105 90 120 195 90 285 105 300 135 300 150 225 165 300 195 300 210 285 180 195 195 90
+Rectangle -7500403 true true 127 79 172 94
+Polygon -7500403 true true 195 90 240 150 225 180 165 105
+Polygon -7500403 true true 105 90 60 150 75 180 135 105
+
+plant
+false
+0
+Rectangle -7500403 true true 135 90 165 300
+Polygon -7500403 true true 135 255 90 210 45 195 75 255 135 285
+Polygon -7500403 true true 165 255 210 210 255 195 225 255 165 285
+Polygon -7500403 true true 135 180 90 135 45 120 75 180 135 210
+Polygon -7500403 true true 165 180 165 210 225 180 255 120 210 135
+Polygon -7500403 true true 135 105 90 60 45 45 75 105 135 135
+Polygon -7500403 true true 165 105 165 135 225 105 255 45 210 60
+Polygon -7500403 true true 135 90 120 45 150 15 180 45 165 90
+
+sheep
+false
+15
+Circle -1 true true 203 65 88
+Circle -1 true true 70 65 162
+Circle -1 true true 150 105 120
+Polygon -7500403 true false 218 120 240 165 255 165 278 120
+Circle -7500403 true false 214 72 67
+Rectangle -1 true true 164 223 179 298
+Polygon -1 true true 45 285 30 285 30 240 15 195 45 210
+Circle -1 true true 3 83 150
+Rectangle -1 true true 65 221 80 296
+Polygon -1 true true 195 285 210 285 210 240 240 210 195 210
+Polygon -7500403 true false 276 85 285 105 302 99 294 83
+Polygon -7500403 true false 219 85 210 105 193 99 201 83
+
+square
+false
+0
+Rectangle -7500403 true true 30 30 270 270
+
+square 2
+false
+0
+Rectangle -7500403 true true 30 30 270 270
+Rectangle -16777216 true false 60 60 240 240
+
+star
+false
+0
+Polygon -7500403 true true 151 1 185 108 298 108 207 175 242 282 151 216 59 282 94 175 3 108 116 108
+
+target
+false
+0
+Circle -7500403 true true 0 0 300
+Circle -16777216 true false 30 30 240
+Circle -7500403 true true 60 60 180
+Circle -16777216 true false 90 90 120
+Circle -7500403 true true 120 120 60
+
+tree
+false
+0
+Circle -7500403 true true 118 3 94
+Rectangle -6459832 true false 120 195 180 300
+Circle -7500403 true true 65 21 108
+Circle -7500403 true true 116 41 127
+Circle -7500403 true true 45 90 120
+Circle -7500403 true true 104 74 152
+
+triangle
+false
+0
+Polygon -7500403 true true 150 30 15 255 285 255
+
+triangle 2
+false
+0
+Polygon -7500403 true true 150 30 15 255 285 255
+Polygon -16777216 true false 151 99 225 223 75 224
+
+truck
+false
+0
+Rectangle -7500403 true true 4 45 195 187
+Polygon -7500403 true true 296 193 296 150 259 134 244 104 208 104 207 194
+Rectangle -1 true false 195 60 195 105
+Polygon -16777216 true false 238 112 252 141 219 141 218 112
+Circle -16777216 true false 234 174 42
+Rectangle -7500403 true true 181 185 214 194
+Circle -16777216 true false 144 174 42
+Circle -16777216 true false 24 174 42
+Circle -7500403 false true 24 174 42
+Circle -7500403 false true 144 174 42
+Circle -7500403 false true 234 174 42
+
+turtle
+true
+0
+Polygon -10899396 true false 215 204 240 233 246 254 228 266 215 252 193 210
+Polygon -10899396 true false 195 90 225 75 245 75 260 89 269 108 261 124 240 105 225 105 210 105
+Polygon -10899396 true false 105 90 75 75 55 75 40 89 31 108 39 124 60 105 75 105 90 105
+Polygon -10899396 true false 132 85 134 64 107 51 108 17 150 2 192 18 192 52 169 65 172 87
+Polygon -10899396 true false 85 204 60 233 54 254 72 266 85 252 107 210
+Polygon -7500403 true true 119 75 179 75 209 101 224 135 220 225 175 261 128 261 81 224 74 135 88 99
+
+wheel
+false
+0
+Circle -7500403 true true 3 3 294
+Circle -16777216 true false 30 30 240
+Line -7500403 true 150 285 150 15
+Line -7500403 true 15 150 285 150
+Circle -7500403 true true 120 120 60
+Line -7500403 true 216 40 79 269
+Line -7500403 true 40 84 269 221
+Line -7500403 true 40 216 269 79
+Line -7500403 true 84 40 221 269
+
+wolf
+false
+0
+Polygon -16777216 true false 253 133 245 131 245 133
+Polygon -7500403 true true 2 194 13 197 30 191 38 193 38 205 20 226 20 257 27 265 38 266 40 260 31 253 31 230 60 206 68 198 75 209 66 228 65 243 82 261 84 268 100 267 103 261 77 239 79 231 100 207 98 196 119 201 143 202 160 195 166 210 172 213 173 238 167 251 160 248 154 265 169 264 178 247 186 240 198 260 200 271 217 271 219 262 207 258 195 230 192 198 210 184 227 164 242 144 259 145 284 151 277 141 293 140 299 134 297 127 273 119 270 105
+Polygon -7500403 true true -1 195 14 180 36 166 40 153 53 140 82 131 134 133 159 126 188 115 227 108 236 102 238 98 268 86 269 92 281 87 269 103 269 113
+
+x
+false
+0
+Polygon -7500403 true true 270 75 225 30 30 225 75 270
+Polygon -7500403 true true 30 75 75 30 270 225 225 270
+@#$#@#$#@
+NetLogo 6.2.0
+@#$#@#$#@
+@#$#@#$#@
+@#$#@#$#@
+<experiments>
+  <experiment name="" repetitions="1" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <timeLimit steps="16"/>
+    <metric>count turtles</metric>
+    <metric>count turtles with [base-move &gt; 0.0009]</metric>
+    <enumeratedValueSet variable="radius-friends">
+      <value value="22"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="radius-neighborhood">
+      <value value="5"/>
+      <value value="10"/>
+      <value value="15"/>
+      <value value="20"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="new-agents?">
+      <value value="false"/>
+      <value value="true"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="nr-agents-neighborhood">
+      <value value="5"/>
+      <value value="10"/>
+      <value value="15"/>
+      <value value="20"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="age_weight">
+      <value value="0"/>
+      <value value="0.25"/>
+      <value value="0.25"/>
+      <value value="0.75"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="nw_weight">
+      <value value="0.5"/>
+      <value value="1.5"/>
+    </enumeratedValueSet>
+  </experiment>
+</experiments>
+@#$#@#$#@
+@#$#@#$#@
+default
+0.0
+-0.2 0 0.0 1.0
+0.0 1 1.0 0.0
+0.2 0 0.0 1.0
+link direction
+true
+0
+Line -7500403 true 150 150 90 180
+Line -7500403 true 150 150 210 180
+@#$#@#$#@
+1
+@#$#@#$#@
